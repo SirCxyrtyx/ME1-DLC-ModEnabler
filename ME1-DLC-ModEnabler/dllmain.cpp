@@ -1,10 +1,11 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
 #include <windows.h>
 #include <vector>
-#include <map>
-#include <fstream>
-#include <iostream>
 #include <filesystem>
+#include "Shlobj.h"
+#include <string>
+#include "IniFile.h"
+#include "FileIndexes.h"
 
 namespace fs = std::filesystem;
 
@@ -17,24 +18,21 @@ namespace fs = std::filesystem;
 typedef unsigned short ushort;
 
 #ifdef LOGGING
-std::ofstream logFile;
+std::wofstream logFile;
 #endif // LOGGING
 
-void addToMap(std::map<fs::path, std::string>& fileMap, const fs::path& dlcPath)
+void addToMap(std::map<fs::path, std::wstring>& fileMap, const fs::path& dlcPath)
 {
 #ifdef LOGGING
-	logFile << std::endl;
-	logFile << "************************\n";
+	logFile << '\n';
 	logFile << "************************\n";
 	logFile << dlcPath.filename() << '\n';
 	logFile << "************************\n";
-	logFile << "************************\n";
-	logFile << std::endl;
 #endif // LOGGING
 	const auto cookedPath = dlcPath / "CookedPC";
 	if (is_directory(cookedPath))
 	{
-		const auto dlcName = dlcPath.filename().string();
+		const auto dlcName = dlcPath.filename().wstring();
 		for (auto& entry : fs::recursive_directory_iterator(cookedPath))
 		{
 			if (entry.is_regular_file())
@@ -45,6 +43,14 @@ void addToMap(std::map<fs::path, std::string>& fileMap, const fs::path& dlcPath)
 	}
 }
 
+fs::path GetDocumentsFolder()
+{
+	PWSTR docPathPtr = nullptr;
+	SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docPathPtr);
+	const std::wstring docPath(docPathPtr);
+	CoTaskMemFree(docPathPtr);
+	return fs::path(docPath);
+}
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD  reason, LPVOID)
 {
@@ -66,61 +72,126 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  reason, LPVOID)
 		logFile << "making file map...\n";
 #endif // LOGGING
 
-		std::map<fs::path, std::string> fileMap;
-		std::map<std::string, std::ofstream*> outputFiles;
-		const auto suffix = fs::path("CookedPC") / "FileIndex.txt";
+		std::map<fs::path, std::wstring> fileMap;
+		FileIndexes fileIndexes;
+		std::vector<std::wstring> dlcWithMovies;
+		std::map<int, fs::path> dlcMount;
+		std::map<int, std::wstring> dlcFriendlyNames;
 		//basegame
 		const auto biogameDir = baseDir / "BioGame";
 		addToMap(fileMap, biogameDir);
-		outputFiles["BioGame"] = new std::ofstream(biogameDir / suffix);
+		fileIndexes.newFile(L"BioGame", biogameDir);
 
-		const auto dlcDir = baseDir / "DLC";
-		const auto bdtsDir = dlcDir / "DLC_UNC";
+		const auto dlcDir = baseDir / L"DLC";
+		auto bdtsName = L"DLC_UNC";
+		const auto bdtsDir = dlcDir / bdtsName;
 		if (is_directory(bdtsDir))
 		{
-			addToMap(fileMap, bdtsDir);
-			outputFiles["DLC_UNC"] = new std::ofstream(bdtsDir / suffix);
+			dlcMount[1] = bdtsDir;
+			dlcFriendlyNames[1] = L"Bring Down the Sky";
 		}
-		const auto pinnacleDir = dlcDir / "DLC_Vegas";
+		auto pinnacleName = L"DLC_Vegas";
+		const auto pinnacleDir = dlcDir / pinnacleName;
 		if (is_directory(pinnacleDir))
 		{
-			addToMap(fileMap, pinnacleDir);
-			outputFiles["DLC_Vegas"] = new std::ofstream(pinnacleDir / suffix);
+			dlcMount[2] = pinnacleDir;
+			dlcFriendlyNames[2] = L"Pinnacle Station";
 		}
 
-		//mods
+		//get load order
 		for (auto& entry : fs::directory_iterator(dlcDir))
 		{
 			if (entry.is_directory())
 			{
 				const auto& dlc_path = entry.path();
-				auto dlcName = dlc_path.filename().string();
-				if (dlcName != "DLC_UNC" && dlcName != "DLC_Vegas")
+				auto dlcName = dlc_path.filename().wstring();
+				if (dlcName != bdtsName && dlcName != pinnacleName)
 				{
-					addToMap(fileMap, dlc_path);
-					outputFiles[dlcName] = new std::ofstream(dlc_path / suffix);
+					auto autoLoadPath = dlc_path / L"AutoLoad.ini";
+					if (is_regular_file(autoLoadPath))
+					{
+						const IniFile autoLoad(autoLoadPath);
+						auto strMount = autoLoad.readValue(L"ME1DLCMOUNT", L"ModMount");
+						if (!strMount.empty())
+						{
+							try
+							{
+								auto mount = std::stoi(strMount);
+								dlcMount[mount] = dlc_path;
+								dlcFriendlyNames[mount] = autoLoad.readValue(L"ME1DLCMOUNT", L"ModName");
+							}
+							catch (...)
+							{
+								//TODO
+							}
+							continue;
+						}
+						//TODO
+					}
+					//TODO
 				}
 			}
 		}
 
+		fs::path bioEnginePath = GetDocumentsFolder() / L"BioWare" / L"Mass Effect" / L"Config" / L"BIOEngine.ini";
+
 #ifdef LOGGING
-		logFile << "{\n";
-		for (const auto& p : fileMap)
-			logFile << p.first << ':' << p.second << ",\n";
-		logFile << "}\n" << std::endl;
-
-		logFile << "writing all FileIndex.txt\n";
+		logFile << "BIOEngine.ini path:\n";
+		logFile << bioEnginePath << '\n';
 #endif // LOGGING
-
-		for (auto && pair : fileMap)
+		if (is_regular_file(bioEnginePath))
 		{
-			*(outputFiles[pair.second]) << pair.first.string() << '\n';
+			IniFile BIOEngine(bioEnginePath);
+
+			auto section = L"Core.System";
+			auto moviePathKey = L"DLC_MoviePaths";
+			auto seekFreeKey = L"SeekFreePCPaths";
+			BIOEngine.removeKeys(section, seekFreeKey);
+			BIOEngine.removeKeys(section, moviePathKey);
+			BIOEngine.writeNewValue(section, seekFreeKey, L"..\\BioGame\\CookedPC");
+
+			std::wofstream loadOrderTxt(dlcDir / L"LoadOrder.Txt");
+			loadOrderTxt << L"This is an auto-generated file for informational purposes only. Editing it will not change the load order.\n\n";
+			for (auto&& pair : dlcMount)
+			{
+				fs::path dlcPath = pair.second;
+				std::wstring dlcName = dlcPath.filename().wstring();
+
+				addToMap(fileMap, dlcPath);
+				fileIndexes.newFile(dlcName, dlcPath);
+				if (is_directory(dlcPath / "Movies"))
+				{
+#ifdef LOGGING
+					logFile << "has Movies\n";
+#endif // LOGGING
+					dlcWithMovies.push_back(dlcName);
+				}
+				BIOEngine.writeNewValue(section, seekFreeKey, L"..\\DLC\\" + dlcName + L"\\CookedPC");
+
+
+				loadOrderTxt << pair.first << L": " << dlcName << L" (" << dlcFriendlyNames[pair.first] << L")" << std::endl;
+			}
+			loadOrderTxt.close();
+
+			fileIndexes.write(fileMap);
+
+			for (auto&& dlcName : dlcWithMovies)
+			{
+				BIOEngine.writeNewValue(section, moviePathKey, L"..\\DLC\\" + dlcName + L"\\Movies");
+			}
+
+#ifdef LOGGING
+			logFile << "{\n";
+			for (const auto& p : fileMap)
+				logFile << p.first << ':' << p.second << ",\n";
+			logFile << "}\n" << std::endl;
+
+			logFile << "writing all FileIndex.txt\n";
+#endif // LOGGING
 		}
-
-		for (auto && pair : outputFiles)
+		else
 		{
-			pair.second->close();
-			delete pair.second;
+			//TODO
 		}
 
 #ifdef LOGGING
