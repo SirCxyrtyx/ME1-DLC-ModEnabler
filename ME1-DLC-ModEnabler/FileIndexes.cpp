@@ -14,10 +14,10 @@ FileIndexes::~FileIndexes()
 	outputFiles[name] = new std::wofstream(path / suffix);
 }
 
-void FileIndexes::write(const std::map<fs::path, std::wstring>& fileMap)
+void FileIndexes::write(const std::map<std::wstring, std::wstring>& fileMap)
 {
 	for (auto&& pair : fileMap)
 	{
-		*(outputFiles[pair.second]) << pair.first.wstring() << '\n';
+		*(outputFiles[pair.second]) << pair.first << '\n';
 	}
 }

@@ -1,8 +1,8 @@
 #pragma once
-#include <map>
 #include <string>
 #include <filesystem>
 #include <fstream>
+#include <map>
 
 namespace fs = std::filesystem;
 
@@ -16,5 +16,5 @@ public:
 
 	void newFile(const std::wstring& name, const fs::path& path);
 
-	void write(const std::map<fs::path, std::wstring>& fileMap);
+	void write(const std::map<std::wstring, std::wstring>& fileMap);
 };
