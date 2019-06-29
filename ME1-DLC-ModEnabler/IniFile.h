@@ -6,9 +6,10 @@ class IniFile
 {
 	std::wstring iniPath;
 	std::vector<std::wstring> replacements;
+	bool readOnly;
 
 public:
-	explicit IniFile(std::wstring iniPath) : iniPath(std::move(iniPath)) {}
+	explicit IniFile(std::wstring iniPath);
 
 	~IniFile();
 

@@ -114,21 +114,30 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  reason, LPVOID)
 						auto strMount = autoLoad.readValue(L"ME1DLCMOUNT", L"ModMount");
 						if (!strMount.empty())
 						{
+							int mount = 0;
 							try
 							{
-								auto mount = std::stoi(strMount);
-								dlcMount[mount] = dlc_path;
-								dlcFriendlyNames[mount] = autoLoad.readValue(L"ME1DLCMOUNT", L"ModName");
+								mount = std::stoi(strMount);
 							}
 							catch (...)
 							{
-								//TODO
+								mount = 0;
 							}
-							continue;
+							if (mount > 2)
+							{
+								dlcMount[mount] = dlc_path;
+								dlcFriendlyNames[mount] = autoLoad.readValue(L"ME1DLCMOUNT", L"ModName");
+								continue;
+							}
 						}
-						//TODO
+						const std::wstring message = L" has an improperly formatted AutoLoad.ini! Try re-installing the mod. If that doesn't fix the problem, contact the mod author.\n\nMass Effect will now close.";
+						MessageBox(nullptr,
+							(dlcName + message).c_str(),
+							L"Mass Effect - Broken Mod Warning",
+							MB_OK | MB_ICONERROR);
+						exit(1);
 					}
-					//TODO
+					//no AutoLoad.ini! ME1 will not attempt to load this folder as a DLC, so we can ignore it.
 				}
 			}
 		}
@@ -191,7 +200,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  reason, LPVOID)
 		}
 		else
 		{
-			//TODO
+			MessageBox(nullptr,
+			           L"No BIOEngine.ini found! Once you reach the main menu, please restart the game to complete initialization",
+			           L"Mass Effect - First Time Setup Warning",
+			           MB_OK | MB_ICONWARNING);
 		}
 
 #ifdef LOGGING

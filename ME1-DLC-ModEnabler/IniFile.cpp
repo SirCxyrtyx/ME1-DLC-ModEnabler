@@ -4,6 +4,16 @@
 #include <iostream>
 #include <sstream>
 
+IniFile::IniFile(std::wstring iniPath): iniPath(std::move(iniPath)), readOnly(false)
+{
+	const auto attributes = GetFileAttributes(this->iniPath.c_str());
+	if (attributes & FILE_ATTRIBUTE_READONLY)
+	{
+		readOnly = true;
+		SetFileAttributes(this->iniPath.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY);
+	}
+}
+
 IniFile::~IniFile()
 {
 	if (!replacements.empty())
@@ -33,6 +43,11 @@ IniFile::~IniFile()
 		std::wofstream outFile(iniPath);
 		outFile << strStream.str();
 		outFile.close();
+	}
+	if (readOnly)
+	{
+		const auto attributes = GetFileAttributes(this->iniPath.c_str());
+		SetFileAttributes(iniPath.c_str(), attributes | FILE_ATTRIBUTE_READONLY);
 	}
 }
 
